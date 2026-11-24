@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Mimic">
+  <rect width="64" height="64" fill="#0B0B10"/>
+  <rect width="64" height="64" rx="16" fill="#0B0B10"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="#FF3355" stroke-opacity="0.85"/>
+  <circle cx="24" cy="27" r="7" fill="#FF3355"/>
+  <circle cx="40" cy="27" r="7" fill="#A855F7"/>
+  <circle cx="24" cy="27" r="2.4" fill="#0B0B10"/>
+  <circle cx="41.2" cy="27" r="2.4" fill="#0B0B10"/>
+  <path d="M22 44c3.2 4 16.8 4 20 0" fill="none" stroke="#F5F5F7" stroke-width="3" stroke-linecap="round"/>
+</svg>
