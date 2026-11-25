@@ -18,7 +18,7 @@ Each person gets a secret role when the host starts.
 
 Survivors win together. They can finish the tasks in the chat, or call a meeting and vote The Mimic out.
 
-A task is a short code to type, a number sequence, or a riddle. In a two-player game there is one survivor, so one finished task wins the round. With more survivors, the team must finish one task for each survivor. The bar in the chat shows the count.
+Each survivor gets five tasks: a six-character code where capitals matter, a number pattern, a sum, a scrambled word, and a riddle. In a two-player game the one survivor must finish all five. With more people, the team must finish five tasks for every survivor.
 
 ## The Mimic
 
@@ -42,7 +42,7 @@ Open [https://the-mimic-lilac.vercel.app](https://the-mimic-lilac.vercel.app).
 1. Tap Play and type a name.
 2. Create a private room, or join with the code a friend sent.
 3. The host starts when two or more people are in the room. Eight is the limit.
-4. Read the objective in the chat. Survivors finish the task. The Mimic stays hidden and borrows a voice.
+4. Read the task in the chat. Survivors work through all five. The Mimic chooses a name beside Send, and that is the name the room sees.
 5. Call a meeting if a message does not sound like the person who sent it.
 
 On a phone, open the site in the browser and add it to the home screen. The icon is the two-eyed mark from the game.

@@ -39,7 +39,6 @@ export default function App() {
   const [lobbyDraft, setLobbyDraft] = useState('')
   const [draft, setDraft] = useState('')
   const [taskAnswer, setTaskAnswer] = useState('')
-  const [mimicText, setMimicText] = useState('')
   const [mimicTarget, setMimicTarget] = useState('')
   const [clock, setClock] = useState('--:--')
   const [whisper, setWhisper] = useState(WHISPERS[0])
@@ -122,6 +121,14 @@ export default function App() {
     return () => clearInterval(timer)
   }, [room])
 
+  useEffect(() => {
+    if (room?.you?.role !== 'mimic' || mimicTarget) return
+    const shadow = (room.shadows || []).find((item) => item.alive)
+    const person = (room.players || []).find((item) => item.alive && !item.self)
+    const first = shadow || person
+    if (first) setMimicTarget(first.id)
+  }, [room, mimicTarget])
+
   async function createRoom() {
     if (name.trim().length < 2) {
       setNote('Type a name with at least 2 letters, then click Create room.')
@@ -191,6 +198,30 @@ export default function App() {
   const openTask = (you.tasks || []).find((task) => task.status !== 'done')
   const need = room ? Math.max(0, (room.minPlayers || 2) - (room.playerCount || 0)) : 0
   const canStart = !!(you.host && room && need === 0)
+
+  function voiceName() {
+    if (!room || mimicTarget === 'self') return you.name || 'you'
+    const person = (room.players || []).find((item) => item.id === mimicTarget)
+    const shadow = (room.shadows || []).find((item) => item.id === mimicTarget)
+    return (person || shadow || {}).name || '…'
+  }
+
+  function sendChat(event) {
+    event.preventDefault()
+    const text = draft
+    setDraft('')
+    if (!text.trim()) return
+    if (you.role === 'mimic' && room.status === 'playing') {
+      if (!mimicTarget) {
+        setNote('Choose whose name to wear.')
+        return
+      }
+      if (mimicTarget === 'self') act('sendMessage', { text })
+      else act('useMimicAbility', { targetId: mimicTarget, text })
+      return
+    }
+    act('sendMessage', { text })
+  }
 
   return (
     <>
@@ -361,7 +392,7 @@ export default function App() {
                 {lines.map((msg) => <Message key={msg.seq} msg={msg} />)}
               </div>
               {you.role === 'survivor' && room.status === 'playing' && openTask && (
-                <Objective task={openTask} answer={taskAnswer} setAnswer={setTaskAnswer} onSubmit={(value) => act('completeTask', { taskId: openTask.id, answer: value })} />
+                <Objective task={openTask} answer={taskAnswer} setAnswer={setTaskAnswer} step={(you.tasks || []).filter((task) => task.status === 'done').length + 1} total={(you.tasks || []).length} onSubmit={(value) => act('completeTask', { taskId: openTask.id, answer: value })} />
               )}
               {you.role === 'mimic' && room.status === 'playing' && (
                 <div className="objective">
@@ -370,9 +401,17 @@ export default function App() {
                   <p className="muted">Send a line as someone else. The survivors win if they finish their task or vote you out.</p>
                 </div>
               )}
-              <form className="composer" onSubmit={(event) => { event.preventDefault(); const text = draft; setDraft(''); if (text.trim()) act('sendMessage', { text }) }}>
-                <input maxLength={180} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message #corrupted-chat" aria-label="Message" />
-                <button className="btn btn-primary" type="submit">Send</button>
+              <form className="composer" onSubmit={sendChat}>
+                {you.role === 'mimic' && room.status === 'playing' && (
+                  <select aria-label="Speak as" value={mimicTarget} onChange={(event) => setMimicTarget(event.target.value)}>
+                    <option value="">Choose a name</option>
+                    {room.shadows.filter((shadow) => shadow.alive).map((shadow) => <option key={shadow.id} value={shadow.id}>{shadow.name}</option>)}
+                    {room.players.filter((person) => person.alive && !person.self).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                    <option value="self">Your own name</option>
+                  </select>
+                )}
+                <input maxLength={180} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={you.role === 'mimic' && room.status === 'playing' ? 'Say it in their voice' : 'Message #corrupted-chat'} aria-label="Message" />
+                <button className="btn btn-primary" type="submit">{you.role === 'mimic' && room.status === 'playing' ? `Send as ${voiceName()}` : 'Send'}</button>
               </form>
               <p className="form-error" style={{ padding: '0 14px 10px' }}>{note}</p>
             </main>
@@ -395,17 +434,7 @@ export default function App() {
                 <p className="panel-note">Your task is in the chat. Finish it and the survivors win.</p>
               )}
               {you.role === 'mimic' && room.status === 'playing' && (
-                <div id="ability-form">
-                  <label>Use the face of</label>
-                  <select value={mimicTarget} onChange={(event) => setMimicTarget(event.target.value)}>
-                    <option value="">Choose a voice</option>
-                    {room.players.filter((person) => person.alive && !person.self).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                    {room.shadows.filter((shadow) => shadow.alive).map((shadow) => <option key={shadow.id} value={shadow.id}>{shadow.name}</option>)}
-                  </select>
-                  <label>Message they will appear to send</label>
-                  <input maxLength={180} placeholder="Say something they might say" value={mimicText} onChange={(event) => setMimicText(event.target.value)} />
-                  <button className="btn btn-primary btn-block" type="button" onClick={() => { const text = mimicText; setMimicText(''); act('useMimicAbility', { targetId: mimicTarget, text }) }}>Use it</button>
-                </div>
+                <p className="panel-note">The name next to Send is the name everyone else will see. Your own name is only used if you pick it.</p>
               )}
               {room.meeting?.phase === 'voting' && (
                 <div className="vote-list">
@@ -443,8 +472,8 @@ export default function App() {
           <h2>Trust is the mechanic.</h2>
           <ol className="how-list">
             <li>Create a room and share the 6-character code. Two people can start. Only the host can lock the door.</li>
-            <li>You receive one secret role. Survivors do a short task. One player is The Mimic.</li>
-            <li>Three extra names are already in the channel. They are not players. The Mimic can speak as one of them.</li>
+            <li>You receive one secret role. Survivors work through five harder tasks. One player is The Mimic.</li>
+            <li>The Mimic picks a name beside Send. The room sees that name, not The Mimic's own name.</li>
             <li>Call a meeting and vote. Only a survivor vote counts. You cannot vote for yourself.</li>
             <li>Vote The Mimic and the survivors win. Vote an empty name and the clock jumps. If time runs out, The Mimic wins.</li>
           </ol>
@@ -456,23 +485,31 @@ export default function App() {
   )
 }
 
-function Objective({ task, answer, setAnswer, onSubmit }) {
+function Objective({ task, answer, setAnswer, onSubmit, step, total }) {
   const code = task.type === 'captcha' ? String(task.prompt.split(': ').pop() || '') : ''
+  const title = {
+    captcha: 'Type this code. Capitals matter.',
+    sequence: 'What number comes next?',
+    math: 'Solve this',
+    anagram: 'Unscramble the word',
+    riddle: 'Pick the right answer',
+  }[task.type] || 'Finish this task'
+  const placeholder = task.type === 'math' ? 'Type the number' : task.type === 'anagram' ? 'Type the word' : 'Type the code'
   return (
     <div className="objective">
-      <p className="eyebrow">Your objective</p>
-      <h3>{task.type === 'captcha' ? 'Type this code' : task.type === 'sequence' ? 'What number comes next?' : 'Pick the right answer'}</h3>
+      <p className="eyebrow">Task {step} of {total}</p>
+      <h3>{title}</h3>
       {task.type === 'captcha' ? (
         <div className="captcha-row">{code.split('').map((letter, index) => <span key={index}>{letter}</span>)}</div>
       ) : (
         <p className="objective-prompt">{task.prompt}</p>
       )}
-      <p className="muted">Finish this and the survivors win.</p>
+      <p className="muted">The survivors win when every task on the bar is finished.</p>
       {task.options.length > 0 ? task.options.map((label, index) => (
         <button className="choice-btn" type="button" key={`${task.id}-${index}`} onClick={() => onSubmit(String(index))}>{label}</button>
       )) : (
         <>
-          <input maxLength={12} placeholder="Type the code" value={answer} onChange={(event) => setAnswer(event.target.value)} />
+          <input maxLength={16} placeholder={placeholder} value={answer} onChange={(event) => setAnswer(event.target.value)} />
           <button className="btn btn-primary btn-block" type="button" onClick={() => onSubmit(answer)}>Submit task</button>
         </>
       )}

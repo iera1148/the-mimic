@@ -184,7 +184,9 @@ async function completeTask(req) {
     if (Date.now() < state.roleRevealUntil) throw new Error('Read your card first.')
     const task = player.tasks.find((item) => item.id === taskId)
     if (!task || task.status === 'done') throw new Error('That task is already finished.')
-    if (answer.toLowerCase() !== String(task.answer).toLowerCase()) throw new Error('That answer is wrong.')
+    const given = task.type === 'captcha' ? answer : answer.toLowerCase()
+    const expected = task.type === 'captcha' ? String(task.answer) : String(task.answer).toLowerCase()
+    if (given !== expected) throw new Error('That answer is wrong.')
     task.status = 'done'
     state.tasksDone += 1
     pushMsg(state, systemMsg(player.name + ' finished a task. ' + state.tasksDone + '/' + state.taskGoal))
@@ -202,7 +204,8 @@ async function useMimicAbility(req) {
     const target = speakTarget(state, targetId)
     if (!target || target.id === player.id) throw new Error('Pick someone else.')
     player.cooldownUntil = Date.now() + CFG.SPEAK_COOLDOWN_MS
-    pushMsg(state, { senderId: player.id, name: target.name, text, kind: 'chat', fake: true, at: Date.now() })
+    const kind = String(target.id).indexOf('npc-') === 0 ? 'npc' : 'chat'
+    pushMsg(state, { senderId: player.id, name: target.name, text, kind, fake: true, at: Date.now() })
   })
 }
 
@@ -340,11 +343,14 @@ function assignRoles(state, people) {
     person.cooldownUntil = 0
     if (person.role === 'survivor') {
       person.tasks.push(makeTask('captcha'))
-      person.tasks.push(makeTask(index % 2 === 0 ? 'riddle' : 'sequence'))
+      person.tasks.push(makeTask('sequence'))
+      person.tasks.push(makeTask('math'))
+      person.tasks.push(makeTask('anagram'))
+      person.tasks.push(makeTask('riddle'))
     }
   })
   const survivors = order.filter((person) => person.role === 'survivor').length
-  state.taskGoal = survivors <= 1 ? 1 : survivors
+  state.taskGoal = survivors * 5
   state.tasksDone = 0
   state.winner = ''
   state.winReason = ''
@@ -353,22 +359,105 @@ function assignRoles(state, people) {
 
 function makeTask(type) {
   if (type === 'captcha') {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
     let answer = ''
-    for (let i = 0; i < 4; i++) answer += alphabet.charAt(Math.floor(Math.random() * alphabet.length))
+    for (let i = 0; i < 6; i++) answer += alphabet.charAt(Math.floor(Math.random() * alphabet.length))
     return { id: uid(), type: 'captcha', prompt: 'Type this code: ' + answer, options: [], answer, status: 'open' }
   }
-  if (type === 'sequence') {
+  if (type === 'sequence') return makeSequence()
+  if (type === 'math') return makeMath()
+  if (type === 'anagram') return makeAnagram()
+  return makeRiddle()
+}
+
+function makeSequence() {
+  const roll = Math.floor(Math.random() * 4)
+  let seq
+  let correct
+  if (roll === 0) {
     const start = 2 + Math.floor(Math.random() * 5)
-    const seq = [start, start + 2, start + 4, start + 6]
-    const correct = String(start + 8)
-    const options = shuffle([correct, String(start + 7), String(start + 10), String(start + 4)])
-    return { id: uid(), type: 'sequence', prompt: seq.join('   ') + '   ?', options, answer: String(options.indexOf(correct)), status: 'open' }
+    seq = [start, start * 2, start * 4, start * 8]
+    correct = start * 16
+  } else if (roll === 1) {
+    const start = 3 + Math.floor(Math.random() * 6)
+    seq = [start]
+    let step = 2
+    for (let i = 0; i < 3; i++) {
+      seq.push(seq[seq.length - 1] + step)
+      step += 1
+    }
+    correct = seq[seq.length - 1] + step
+  } else if (roll === 2) {
+    const a = 2 + Math.floor(Math.random() * 4)
+    const b = a + 1 + Math.floor(Math.random() * 3)
+    seq = [a, b, a + b, a + 2 * b]
+    correct = 2 * a + 3 * b
+  } else {
+    const n = 2 + Math.floor(Math.random() * 4)
+    seq = [n * n, (n + 1) * (n + 1), (n + 2) * (n + 2), (n + 3) * (n + 3)]
+    correct = (n + 4) * (n + 4)
   }
+  const options = uniqueChoices(correct, [correct - 1, correct + 2, correct - seq[0], correct + seq[1]])
+  return { id: uid(), type: 'sequence', prompt: seq.join('   ') + '   ?', options, answer: String(options.indexOf(String(correct))), status: 'open' }
+}
+
+function uniqueChoices(correct, extras) {
+  const options = [String(correct)]
+  const seen = new Set(options)
+  extras.forEach((value) => {
+    const text = String(value)
+    if (value < 0 || seen.has(text)) return
+    seen.add(text)
+    options.push(text)
+  })
+  let extra = correct + 3
+  while (options.length < 4) {
+    const text = String(extra)
+    if (!seen.has(text)) {
+      seen.add(text)
+      options.push(text)
+    }
+    extra += 1
+  }
+  return shuffle(options)
+}
+
+function makeMath() {
+  const a = 6 + Math.floor(Math.random() * 8)
+  const b = 4 + Math.floor(Math.random() * 6)
+  const c = 3 + Math.floor(Math.random() * 9)
+  const answer = String(a * b - c)
+  return { id: uid(), type: 'math', prompt: a + ' × ' + b + ' − ' + c, options: [], answer, status: 'open' }
+}
+
+function makeAnagram() {
+  const words = ['SHADOW', 'WHISPER', 'MIRROR', 'TUNNEL', 'SILENCE', 'STRANGER', 'ECHO', 'LANTERN', 'LOCK', 'CIPHER']
+  const answer = words[Math.floor(Math.random() * words.length)]
+  const letters = answer.split('')
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const swap = letters[i]
+    letters[i] = letters[j]
+    letters[j] = swap
+  }
+  if (letters.join('') === answer && letters.length > 1) {
+    const swap = letters[0]
+    letters[0] = letters[1]
+    letters[1] = swap
+  }
+  return { id: uid(), type: 'anagram', prompt: 'Unscramble: ' + letters.join(' '), options: [], answer, status: 'open' }
+}
+
+function makeRiddle() {
   const bank = [
-    { q: 'I have hands but I cannot clap. What am I?', options: ['A clock', 'A mirror', 'A shadow'], answer: 'A clock' },
-    { q: 'What gets louder the quieter the room becomes?', options: ['A whisper', 'A siren', 'A drum'], answer: 'A whisper' },
-    { q: 'I copy your words, but I am not you. What am I?', options: ['The Mimic', 'A door', 'A task'], answer: 'The Mimic' },
+    { q: 'I have hands but I cannot clap. What am I?', options: ['A clock', 'A mirror', 'A shadow', 'A door'], answer: 'A clock' },
+    { q: 'What gets louder the quieter the room becomes?', options: ['A whisper', 'A siren', 'A drum', 'A bell'], answer: 'A whisper' },
+    { q: 'The more you take from me, the bigger I grow. What am I?', options: ['A hole', 'A shadow', 'A debt', 'A name'], answer: 'A hole' },
+    { q: 'I follow you in daylight and vanish at night. What am I?', options: ['Your shadow', 'A rumour', 'An echo', 'A key'], answer: 'Your shadow' },
+    { q: 'What can fill a room without taking up space?', options: ['Light', 'A chair', 'A voice', 'Smoke'], answer: 'Light' },
+    { q: 'I have a tongue and no mouth, and I am often heard before I am seen. What am I?', options: ['A bell', 'A shoe', 'A book', 'A map'], answer: 'A bell' },
+    { q: 'What word becomes shorter when you add two letters to it?', options: ['Short', 'Small', 'Brief', 'Quiet'], answer: 'Short' },
+    { q: 'I copy a face, but I have no face of my own. What am I?', options: ['A mirror', 'A mask', 'A photo', 'A window'], answer: 'A mirror' },
   ]
   const pick = bank[Math.floor(Math.random() * bank.length)]
   const options = shuffle(pick.options.slice())

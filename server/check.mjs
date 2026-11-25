@@ -22,7 +22,7 @@ const guest = await handleAction({ action: 'joinRoom', username: 'Ben', roomCode
 assert(guest.ok && guest.state.playerCount === 2, JSON.stringify(guest))
 
 const started = await handleAction({ action: 'startGame', ...host.session })
-assert(started.ok && started.state.taskGoal === 1, started.error || started.state.taskGoal)
+assert(started.ok && started.state.taskGoal === 5, started.error || started.state.taskGoal)
 const guestView = await handleAction({ action: 'pollRoom', ...guest.session })
 assert(guestView.state.you.role !== started.state.you.role, 'roles')
 assert(JSON.stringify(guestView.state.players).indexOf('"role"') === -1, 'role leak')
@@ -33,7 +33,7 @@ shift = 7000
 const task = survivorView.you.tasks[0]
 const code = task.prompt.split(': ')[1]
 const done = await handleAction({ action: 'completeTask', ...survivor, taskId: task.id, answer: code })
-assert(done.state.ending && done.state.ending.winner === 'survivors', JSON.stringify(done))
+assert(done.ok && done.state.tasksDone === 1 && !done.state.ending, JSON.stringify(done))
 
 async function pair(tag) {
   shift = 0
@@ -50,6 +50,9 @@ const voice = await pair('Z')
 shift = 8000
 const said = await handleAction({ action: 'useMimicAbility', ...voice.mim.session, targetId: 'npc-rae', text: 'Trust Sol.' })
 assert(said.ok && said.state.messages.some((msg) => msg.disguised && msg.name === 'Rae'), said.error || 'disguise')
+shift = 8000 + 19000
+const worn = await handleAction({ action: 'useMimicAbility', ...voice.mim.session, targetId: voice.surv.view.you.id, text: 'Count me in.' })
+assert(worn.ok && worn.state.messages.some((msg) => msg.disguised && msg.name === voice.surv.view.you.name), worn.error || 'player disguise')
 
 const caught = await pair('X')
 shift = 8000
