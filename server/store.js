@@ -12,6 +12,11 @@ function useMemory() {
   return !process.env.BLOB_READ_WRITE_TOKEN
 }
 
+function strongEtag(etag) {
+  // Compressed reads come back as W/"...". ifMatch only accepts the strong form.
+  return String(etag || '').trim().replace(/^W\//i, '')
+}
+
 function conflict() {
   const err = new Error('The room changed. Try again.')
   err.code = 'conflict'
@@ -37,7 +42,7 @@ export async function readRoom(code) {
     if (!result || result.statusCode === 304 || !result.stream) return null
     const text = await new Response(result.stream).text()
     const row = JSON.parse(text)
-    row.etag = (result.blob && result.blob.etag) || result.etag || ''
+    row.etag = strongEtag((result.blob && result.blob.etag) || result.etag || '')
     return row
   } catch (err) {
     const name = err && (err.name || '')
@@ -56,14 +61,16 @@ export async function writeRoom(code, row, etag) {
     return
   }
   const { put } = await import('@vercel/blob')
+  const match = strongEtag(etag)
   const options = {
     access: 'private',
     addRandomSuffix: false,
-    allowOverwrite: !etag,
+    // ifMatch is a conditional overwrite. The Blob SDK rejects it unless overwrite is allowed.
+    allowOverwrite: true,
     contentType: 'application/json',
     cacheControlMaxAge: 1,
   }
-  if (etag) options.ifMatch = etag
+  if (match) options.ifMatch = match
   try {
     await put(`rooms/${code}.json`, JSON.stringify({ state: row.state, version: row.version }), options)
   } catch (err) {
